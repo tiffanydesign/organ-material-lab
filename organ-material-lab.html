@@ -420,10 +420,10 @@ const state = {
 
   /* particles */
   ptPreset: 'halftone',
-  ptPitchPx: 10, ptAngle: 0,
+  ptPitchPx: 3, ptAngle: 0,
   ptFill: 0.75, ptSoft: 0.1,
   ptColor: '#ee4b35', ptTip: '#ee4b35',
-  ptLightMix: 0.45, ptInvert: false, ptContrast: 1.15,
+  ptLightMix: 0.45, ptInvert: false, ptContrast: 1.15, ptFloor: 0,
   ptOpacity: 1, ptGlow: 1,
   ptAdditive: false,
 
@@ -482,19 +482,27 @@ const P_XRAY = {
 
 const P_POINTS = {
   halftone: { name: 'Redprint Screen', cn: '', patch: {
-    ptPitchPx: 10, ptAngle: 0,
+    ptPitchPx: 3, ptAngle: 0,
     ptFill: 0.75, ptSoft: 0.1, ptColor: '#ee4b35', ptTip: '#ee4b35',
-    ptLightMix: 0.45, ptInvert: false, ptContrast: 1.15,
+    ptLightMix: 0.45, ptInvert: false, ptContrast: 1.15, ptFloor: 0,
     ptOpacity: 1, ptGlow: 1, ptAdditive: false } },
   matrix: { name: 'Blueprint Screen', cn: '', patch: {
-    ptPitchPx: 9, ptAngle: 0,
+    ptPitchPx: 3, ptAngle: 0,
     ptFill: 0.78, ptSoft: 0.12, ptColor: '#1d7fa3', ptTip: '#0b4f68',
-    ptLightMix: 0.4, ptInvert: false, ptContrast: 1.2,
+    ptLightMix: 0.4, ptInvert: false, ptContrast: 1.2, ptFloor: 0,
+    ptOpacity: 1, ptGlow: 1, ptAdditive: false } },
+  /* Ink collects on the silhouette and fades inward: invert the tone so the
+     grazing angles read darkest, then a small floor keeps faint dots across the
+     middle instead of leaving it blank. */
+  contour: { name: 'Contour Fade', cn: '', patch: {
+    ptPitchPx: 3, ptAngle: 0,
+    ptFill: 0.95, ptSoft: 0.1, ptColor: '#c8d9ef', ptTip: '#33518f',
+    ptLightMix: 0, ptInvert: true, ptContrast: 1.8, ptFloor: 0.045,
     ptOpacity: 1, ptGlow: 1, ptAdditive: false } },
   scan: { name: 'Body Scan', cn: '', patch: {
     ptPitchPx: 3, ptAngle: 0,
     ptFill: 0.78, ptSoft: 0.12, ptColor: '#1d7fa3', ptTip: '#0b4f68',
-    ptLightMix: 0.4, ptInvert: false, ptContrast: 1.2,
+    ptLightMix: 0.4, ptInvert: false, ptContrast: 1.2, ptFloor: 0,
     ptOpacity: 1, ptGlow: 1, ptAdditive: false } },
 };
 
@@ -873,6 +881,7 @@ const matHalftone = new THREE.ShaderMaterial({
     uFill: { value: state.ptFill },
     uSoft: { value: state.ptSoft },
     uContrast: { value: state.ptContrast },
+    uFloor: { value: state.ptFloor },
     uInvert: { value: state.ptInvert ? 1 : 0 },
     uOpacity: { value: state.ptOpacity },
     uGlow: { value: state.ptGlow },
@@ -888,7 +897,7 @@ const matHalftone = new THREE.ShaderMaterial({
     uniform sampler2D uTone;
     uniform vec2 uRes;
     uniform vec3 uColor, uTip;
-    uniform float uPitch, uAngle, uFill, uSoft, uContrast, uInvert, uOpacity, uGlow;
+    uniform float uPitch, uAngle, uFill, uSoft, uContrast, uInvert, uOpacity, uGlow, uFloor;
     void main() {
       vec2 px = vUv * uRes;
       float c = cos(uAngle), s = sin(uAngle);
@@ -913,7 +922,9 @@ const matHalftone = new THREE.ShaderMaterial({
       float av = asum / 9.0;
       float tv = asum > 0.0001 ? tsum / asum : 0.0;
       float bright = mix(tv, 1.0 - tv, uInvert);
-      float cov = av * pow(clamp(bright, 0.0, 1.0), uContrast);
+      /* uFloor is the minimum ink a covered cell keeps. Without it an inverted
+         screen goes completely blank wherever the surface faces the camera. */
+      float cov = av * (uFloor + (1.0 - uFloor) * pow(clamp(bright, 0.0, 1.0), uContrast));
       if (cov <= 0.0008) discard;
       float r = 0.5 * uFill * sqrt(cov);
       float d = length(g - id);
@@ -935,6 +946,7 @@ function applyPoints() {
   h.uFill.value = state.ptFill;
   h.uSoft.value = state.ptSoft;
   h.uContrast.value = state.ptContrast;
+  h.uFloor.value = state.ptFloor;
   h.uInvert.value = state.ptInvert ? 1 : 0;
   h.uOpacity.value = state.ptOpacity;
   h.uGlow.value = state.ptGlow;
@@ -1443,7 +1455,7 @@ const SEC_POINTS = { id: 'points', title: 'PARTICLES', cn: '', open: true, items
   { t: 'sub', label: 'PRESETS', cn: '' },
   { t: 'chips' },
   { t: 'sub', label: 'SCREEN', cn: '' },
-  { t: 'range', k: 'ptPitchPx', label: 'Screen Pitch', cn: '', min: 3, max: 40, step: 0.5 },
+  { t: 'range', k: 'ptPitchPx', label: 'Screen Pitch', cn: '', min: 1, max: 13, step: 0.25 },
   { t: 'range', k: 'ptAngle', label: 'Screen Angle', cn: '', min: 0, max: 90, step: 1 },
   { t: 'range', k: 'ptFill', label: 'Dot Size', cn: '', min: 0.1, max: 2, step: 0.01 },
   { t: 'range', k: 'ptSoft', label: 'Edge Softness', cn: '', min: 0.02, max: 1, step: 0.01 },
@@ -1452,6 +1464,7 @@ const SEC_POINTS = { id: 'points', title: 'PARTICLES', cn: '', open: true, items
   { t: 'color', k: 'ptTip', label: 'Peak Color', cn: '' },
   { t: 'range', k: 'ptLightMix', label: 'Light Mix', cn: '', min: 0, max: 1, step: 0.01 },
   { t: 'range', k: 'ptContrast', label: 'Contrast', cn: '', min: 0.3, max: 3, step: 0.01 },
+  { t: 'range', k: 'ptFloor', label: 'Base Tone', cn: '', min: 0, max: 0.5, step: 0.005 },
   { t: 'toggle', k: 'ptInvert', label: 'Invert Tone', cn: '' },
   { t: 'range', k: 'ptOpacity', label: 'Opacity', cn: '', min: 0.02, max: 1, step: 0.01 },
   { t: 'range', k: 'ptGlow', label: 'Glow', cn: '', min: 0.2, max: 2.5, step: 0.01 },
